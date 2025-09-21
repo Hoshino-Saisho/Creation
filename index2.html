@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>表格计算器</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    table { border-collapse: collapse; }
+    td, th {
+      border: 1px solid #ccc;
+      padding: 5px;
+      min-width: 80px;
+      text-align: center;
+    }
+    input {
+      width: 100%;
+      border: none;
+      text-align: center;
+    }
+    input:focus { outline: 1px solid #4CAF50; }
+  </style>
+</head>
+<body>
+  <h1>交互式表格计算器</h1>
+  <table id="sheet">
+    <thead>
+      <tr>
+        <th></th>
+        <th>A</th>
+        <th>B</th>
+        <th>C</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th>1</th>
+        <td><input value="10"></td>
+        <td><input value="20"></td>
+        <td><input value="=A1+B1"></td>
+      </tr>
+      <tr>
+        <th>2</th>
+        <td><input value="5"></td>
+        <td><input value="15"></td>
+        <td><input value="=SUM(A2:B2)"></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <script>
+    function evaluateFormula(formula, getCellValue) {
+      formula = formula.replace(/^=/, "");
+      formula = formula.replace(/\bSUM\(([^)]+)\)/gi, (_, range) => {
+        return range.split(":").map(ref => getCellValue(ref)).join("+");
+      });
+      formula = formula.replace(/\b([A-Z]+)(\d+)\b/g, (_, col, row) => {
+        return getCellValue(col + row);
+      });
+      try {
+        return eval(formula);
+      } catch (e) {
+        return "#ERR";
+      }
+    }
+
+    function recalc() {
+      const table = document.getElementById("sheet");
+      const inputs = table.querySelectorAll("input");
+
+      function getCellValue(ref) {
+        const col = ref.match(/[A-Z]+/)[0];
+        const row = parseInt(ref.match(/\d+/)[0], 10);
+        const colIndex = col.charCodeAt(0) - 65; // A=0
+        const rowIndex = row - 1;
+        const cell = table.querySelectorAll("tbody tr")[rowIndex]
+          .querySelectorAll("td")[colIndex]
+          .querySelector("input");
+        const v = cell.value;
+        if (v.startsWith("=")) {
+          return evaluateFormula(v, getCellValue) || 0;
+        }
+        return parseFloat(v) || 0;
+      }
+
+      inputs.forEach(input => {
+        if (input.value.startsWith("=")) {
+          input.value = evaluateFormula(input.value, getCellValue);
+        }
+      });
+    }
+
+    document.querySelectorAll("input").forEach(input => {
+      input.addEventListener("input", recalc);
+    });
+
+    recalc();
+  </script>
+</body>
+</html>
