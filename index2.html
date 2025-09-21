@@ -2,108 +2,163 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>生产链建筑数量配平计算器</title>
+    <title>生产链与等级配平集成计算器</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/handsontable/dist/handsontable.full.min.css">
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 20px 40px; background-color: #f7f7f7; }
-        h1, p { color: #333; }
-        .info { background-color: #eaf2ff; border-left: 4px solid #5a8dee; padding: 15px; margin-bottom: 20px; border-radius: 4px; }
-        .control-panel { margin-bottom: 20px; }
-        .control-panel button { font-size: 16px; padding: 10px 20px; cursor: pointer; background-color: #28a745; color: white; border: none; border-radius: 5px; }
-        #calculator-grid { box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 20px;}
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 20px 40px; background-color: #f0f2f5; }
+        h1, h2 { color: #333; border-bottom: 2px solid #ccc; padding-bottom: 10px; }
+        .container { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 30px; }
+        .control-panel { margin-bottom: 20px; padding: 15px; background-color: #f7f7f7; border-radius: 5px; display: flex; align-items: center; gap: 20px; }
+        .control-panel label { font-weight: bold; }
+        .control-panel input { width: 150px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
+        .control-panel button { font-size: 16px; padding: 8px 20px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 5px; }
     </style>
 </head>
 <body>
 
-    <h1>生产链建筑数量配平计算器</h1>
-    <div class="info">
-        <p><b>使用说明：</b></p>
-        <ol>
-            <li>在表格中，<b>从上到下</b>依次输入您的生产链建筑 (A -> B -> C)。</li>
-            <li>填写每个建筑的<b>“单位产量”</b>和它对<b>“上级产品的消耗量”</b>。</li>
-            <li>点击计算，系统会自动找出链条中的“基础单位”建筑（即相对需求量最小的建筑），并将其配平数量设为1，然后计算出其他所有建筑的对应数量。</li>
-        </ol>
+    <h1>生产链与等级配平集成计算器</h1>
+
+    <div class="container">
+        <h2>一、生产链建筑数量配平</h2>
+        <div class="control-panel">
+            <button id="calc-ratio-btn">计算理想配比</button>
+        </div>
+        <div id="ratio-calculator"></div>
     </div>
 
-    <div class="control-panel">
-        <button id="calculate-button">计算配平数量</button>
+    <div class="container">
+        <h2>二、现有建筑等级配平</h2>
+        <div class="control-panel">
+            <label for="total-levels-input">总共可提升等级数:</label>
+            <input type="number" id="total-levels-input" value="100" min="0">
+        </div>
+        <div id="level-calculator"></div>
     </div>
-
-    <div id="calculator-grid"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/handsontable/dist/handsontable.full.min.js"></script>
     <script>
-        const initialProductionChainData = [
-            // [建筑名称, 单位产量, 上级产品消耗量, 配平数量(结果)]
-            ['铁矿场', 30, 0, null],
-            ['炼铁厂', 30, 30, null],
-            ['齿轮厂', 15, 15, null]
-        ];
+        // --- 通用设置 ---
+        const BUILDING_SLOTS = 22; // 为您预留22个建筑位置
 
-        // 最终版算法：三步配平法
-        function calculateChainRatios() {
-            const data = hot.getSourceDataArray();
+        // --- 功能一：生产链配平计算器 ---
+        const ratioContainer = document.getElementById('ratio-calculator');
+        const initialRatioData = Array.from({ length: BUILDING_SLOTS }, () => ["", null, null, null]);
+        
+        // 示例数据，展示1->3->9的逻辑
+        initialRatioData[0] = ['A (初级)', 1, 0, null];
+        initialRatioData[1] = ['B (中级)', 1, 3, null];
+        initialRatioData[2] = ['C (高级)', 1, 3, null];
+
+        const ratioHot = new Handsontable(ratioContainer, {
+            data: initialRatioData,
+            colHeaders: ['建筑名称', '自身单次产量', '对上级产品的消耗量', '理想配平数量 (结果)'],
+            columns: [{}, { type: 'numeric' }, { type: 'numeric' }, { type: 'numeric', readOnly: true, numericFormat: { pattern: '0,0.000' } }],
+            rowHeaders: true, height: 400, stretchH: 'all', licenseKey: 'non-commercial-and-evaluation'
+        });
+
+        function calculateRatios() {
+            const data = ratioHot.getSourceDataArray().filter(row => row[0]); // 只处理有名称的行
             if (data.length === 0) return;
 
-            // --- 步骤 1: 反向计算，得出相对于最终产品的“相对配比” ---
-            const relativeRatios = new Array(data.length);
-            relativeRatios[data.length - 1] = 1; // 最后一个建筑的相对配比基准为1
+            // BUG修复：实现累积乘法 (1, 3, 9的逻辑)
+            let relativeRatios = new Array(data.length);
+            relativeRatios[data.length - 1] = 1;
 
             for (let i = data.length - 2; i >= 0; i--) {
                 const upstreamOutput = parseFloat(data[i][1]) || 0;
                 const downstreamConsumption = parseFloat(data[i + 1][2]) || 0;
-
                 if (upstreamOutput === 0) {
                     relativeRatios[i] = Infinity;
                 } else {
-                    // 核心公式：上游配比 = 下游配比 * 下游消耗 / 上游产出
                     relativeRatios[i] = relativeRatios[i+1] * downstreamConsumption / upstreamOutput;
                 }
             }
-            
-            // --- 步骤 2: 找到所有相对配比中的最小值 (即“最小权重”) ---
+
             let minRatio = Infinity;
-            relativeRatios.forEach(ratio => {
-                if (ratio > 0 && ratio < minRatio) {
-                    minRatio = ratio;
-                }
-            });
+            relativeRatios.forEach(r => { if (r > 0 && r < minRatio) minRatio = r; });
+            if (minRatio === Infinity) minRatio = 1;
 
-            if (minRatio === Infinity) { // 如果所有比率都是0或无效，则不进行下一步
-                minRatio = 1;
-            }
-
-            // --- 步骤 3: 使用“1/最小配比”作为全局乘数，计算最终的配平数量 ---
-            const globalMultiplier = 1 / minRatio;
+            const multiplier = 1 / minRatio;
             const changes = [];
-            relativeRatios.forEach((ratio, index) => {
-                const finalAmount = ratio * globalMultiplier;
-                changes.push([index, 3, finalAmount]);
-            });
-
-            // 一次性将所有计算结果更新到表格
-            hot.setDataAtCell(changes);
+            relativeRatios.forEach((r, i) => changes.push([i, 3, r * multiplier]));
+            
+            ratioHot.setDataAtCell(changes);
         }
+        document.getElementById('calc-ratio-btn').addEventListener('click', calculateRatios);
 
-        const container = document.getElementById('calculator-grid');
-        const hot = new Handsontable(container, {
-            data: initialProductionChainData,
-            colHeaders: ['建筑名称', '单位产量', '上级产品消耗量', '配平数量 (结果)'],
+
+        // --- 功能二：建筑等级配平计算器 ---
+        const levelContainer = document.getElementById('level-calculator');
+        const initialLevelData = Array.from({ length: BUILDING_SLOTS }, () => ["", null, 'n', null, null, null, null]);
+
+        const levelHot = new Handsontable(levelContainer, {
+            data: initialLevelData,
+            colHeaders: ['建筑名称', '当前等级', '是否锁定', '提升权重', '等级上限', '提升后等级 (结果)', '最终等级 (结果)'],
             columns: [
-                {}, 
-                { type: 'numeric' }, 
-                { type: 'numeric' }, 
-                { type: 'numeric', readOnly: true, numericFormat: { pattern: '0,0.000' } }
+                {}, // 名称
+                { type: 'numeric' }, // 当前等级
+                { type: 'checkbox', checkedTemplate: 'y', uncheckedTemplate: 'n' }, // 锁定
+                { type: 'numeric' }, // 权重
+                { type: 'numeric' }, // 上限
+                { type: 'numeric', readOnly: true }, // 提升后
+                { type: 'numeric', readOnly: true }  // 最终
             ],
-            rowHeaders: true,
-            height: 'auto',
-            width: 'auto',
-            stretchH: 'all',
-            licenseKey: 'non-commercial-and-evaluation'
+            rowHeaders: true, height: 400, stretchH: 'all', licenseKey: 'non-commercial-and-evaluation'
         });
 
-        document.getElementById('calculate-button').addEventListener('click', calculateChainRatios);
-        window.addEventListener('DOMContentLoaded', calculateChainRatios);
+        function calculateLevels() {
+            let totalLevelsToAdd = parseInt(document.getElementById('total-levels-input').value, 10) || 0;
+            let data = levelHot.getSourceDataArray().filter(row => row[0]); // 只处理有名称的行
+            
+            let tempData = data.map(row => ({
+                level: parseInt(row[1]) || 0,
+                locked: row[2] === 'y' || row[2] === true,
+                weight: parseFloat(row[3]) || 0,
+                cap: parseInt(row[4]) || Infinity
+            }));
+
+            for (let i = 0; i < totalLevelsToAdd; i++) {
+                let candidateIndex = -1, minLevel = Infinity, maxWeight = -Infinity;
+                tempData.forEach((b, index) => {
+                    if (!b.locked && b.level < b.cap) {
+                        if (b.level < minLevel) {
+                            minLevel = b.level;
+                            maxWeight = b.weight;
+                            candidateIndex = index;
+                        } else if (b.level === minLevel && b.weight > maxWeight) {
+                            maxWeight = b.weight;
+                            candidateIndex = index;
+                        }
+                    }
+                });
+
+                if (candidateIndex !== -1) {
+                    tempData[candidateIndex].level++;
+                } else {
+                    break;
+                }
+            }
+
+            const changes = [];
+            tempData.forEach((b, index) => {
+                changes.push([index, 5, b.level]); // 提升后等级
+                changes.push([index, 6, Math.min(b.level, b.cap)]); // 最终等级
+            });
+            levelHot.setDataAtCell(changes);
+        }
+        
+        // 任何变动都触发等级计算
+        levelHot.addHook('afterChange', (changes, source) => {
+             if (source !== 'loadData') calculateLevels();
+        });
+        document.getElementById('total-levels-input').addEventListener('input', calculateLevels);
+        
+        // 页面加载后运行一次所有计算
+        window.addEventListener('DOMContentLoaded', () => {
+            calculateRatios();
+            calculateLevels();
+        });
+
     </script>
 </body>
 </html>
