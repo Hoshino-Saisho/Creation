@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>建筑升级计算器</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f0f2f5;
+      color: #333;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      background-color: #fff;
+      padding: 25px 30px;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      width: 100%;
+      max-width: 900px;
+    }
+    h1 {
+      text-align: center;
+      color: #1c1e21;
+      margin-bottom: 10px;
+    }
+    .instructions {
+      background-color: #fffbe6;
+      border: 1px solid #ffe58f;
+      padding: 15px;
+      border-radius: 6px;
+      font-size: 0.9em;
+      margin-bottom: 20px;
+    }
+    .instructions ul {
+      padding-left: 20px;
+      margin: 0;
+    }
+    .level-inputs {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      margin-bottom: 25px;
+    }
+    .level-inputs div {
+      display: flex;
+      flex-direction: column;
+    }
+    label {
+      font-weight: 600;
+      margin-bottom: 5px;
+      font-size: 0.95em;
+    }
+    input[type="number"] {
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 1em;
+      background-color: #000;
+      color: #fff;
+      width: 120px;
+      text-align: center;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 12px;
+      text-align: center;
+      vertical-align: middle;
+    }
+    th {
+      background-color: #f7f7f7;
+      font-weight: 600;
+    }
+    td:first-child {
+      text-align: left;
+      font-weight: 500;
+    }
+    .output-cell {
+      background-color: #e9ecef;
+      font-weight: bold;
+      color: #0056b3;
+      min-width: 100px;
+    }
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+    }
+    button {
+      padding: 12px 25px;
+      font-size: 1em;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    #calculateBtn {
+      background-color: #007bff;
+      color: white;
+    }
+    #calculateBtn:hover {
+      background-color: #0056b3;
+    }
+    #resetBtn {
+      background-color: #6c757d;
+      color: white;
+    }
+    #resetBtn:hover {
+      background-color: #5a6268;
+    }
+    .error-message {
+      color: #d93025;
+      font-size: 0.85em;
+      margin-top: 5px;
+      height: 1em;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>建筑升级计算器</h1>
+  <div class="instructions">
+    <strong>使用说明:</strong>
+    <ul>
+      <li>填写 <strong>初始等级</strong> 和 <strong>目标等级</strong>。</li>
+      <li>每个资源可填写 <strong>一级消耗</strong> 或 <strong>现等级消耗</strong>，二选一。</li>
+      <li>点击 "计算" 得到总消耗与一级成本。</li>
+    </ul>
+  </div>
+
+  <div class="level-inputs">
+    <div>
+      <label for="initial-level">初始等级 (m)</label>
+      <input type="number" id="initial-level" min="0" value="0">
+    </div>
+    <div>
+      <label for="target-level">目标等级 (n)</label>
+      <input type="number" id="target-level" min="1" value="6">
+    </div>
+  </div>
+  <div id="level-error" class="error-message" style="text-align: center; margin-bottom: 15px;"></div>
+
+  <table>
+    <thead>
+    <tr>
+      <th>资源</th>
+      <th>一级消耗 (k)</th>
+      <th>现等级消耗</th>
+      <th>总消耗</th>
+      <th>一级成本 (计算值)</th>
+    </tr>
+    </thead>
+    <tbody id="resource-table"></tbody>
+  </table>
+
+  <div class="controls">
+    <button id="calculateBtn">计算</button>
+    <button id="resetBtn">重置</button>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const resources = [
+      { name: '砖块', isTime: false },
+      { name: '钢筋混凝土', isTime: false },
+      { name: '木板', isTime: false },
+      { name: '建筑预构件', isTime: false },
+      { name: '时间 (小时)', isTime: true }
+    ];
+
+    const tableBody = document.getElementById('resource-table');
+
+    resources.forEach((res, index) => {
+      const row = document.createElement('tr');
+      row.id = `resource-${index}`;
+      let timeCell = res.isTime ? `<br><span id="time-days-${index}" style="font-size:0.9em; color:#555;">(0 天)</span>` : '';
+
+      row.innerHTML = `
+        <td>${res.name}${timeCell}</td>
+        <td><input type="number" class="cost-input level-1-cost" placeholder="输入一级成本" min="0"></td>
+        <td><input type="number" class="cost-input current-level-cost" placeholder="输入当前等级成本" min="0"></td>
+        <td class="output-cell" id="total-cost-${index}">-</td>
+        <td class="output-cell" id="calculated-k-${index}">-</td>
+      `;
+      tableBody.appendChild(row);
+    });
+
+    const calculateBtn = document.getElementById('calculateBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    calculateBtn.addEventListener('click', calculateAll);
+    resetBtn.addEventListener('click', resetAll);
+
+    document.querySelectorAll('.cost-input').forEach(input => {
+      input.addEventListener('input', function(e) {
+        const parentRow = e.target.closest('tr');
+        if (e.target.classList.contains('level-1-cost')) {
+          parentRow.querySelector('.current-level-cost').value = '';
+        } else if (e.target.classList.contains('current-level-cost')) {
+          parentRow.querySelector('.level-1-cost').value = '';
+        }
+      });
+    });
+
+    function calculateAll() {
+      const m = parseInt(document.getElementById('initial-level').value);
+      const n = parseInt(document.getElementById('target-level').value);
+      const levelError = document.getElementById('level-error');
+
+      if (isNaN(m) || isNaN(n) || m < 0 || n < 0) {
+        levelError.textContent = '等级必须是有效的非负数字。';
+        return;
+      }
+      if (n <= m) {
+        levelError.textContent = '目标等级必须大于初始等级。';
+        return;
+      }
+      levelError.textContent = '';
+
+      resources.forEach((res, index) => {
+        const row = document.getElementById(`resource-${index}`);
+        const level1CostInput = row.querySelector('.level-1-cost');
+        const currentLevelCostInput = row.querySelector('.current-level-cost');
+        const totalCostCell = document.getElementById(`total-cost-${index}`);
+        const calculatedKCell = document.getElementById(`calculated-k-${index}`);
+        
+        let k = 0;
+        totalCostCell.textContent = '-';
+        calculatedKCell.textContent = '-';
+        if (res.isTime) document.getElementById(`time-days-${index}`).textContent = `(0 天)`;
+
+        const level1Cost = parseFloat(level1CostInput.value);
+        const currentLevelCost = parseFloat(currentLevelCostInput.value);
+
+        if (!isNaN(level1Cost) && level1Cost > 0) {
+          k = level1Cost;
+        } else if (!isNaN(currentLevelCost) && currentLevelCost > 0) {
+          if (m === 0) {
+            totalCostCell.textContent = "错误";
+            if (res.isTime) document.getElementById(`time-days-${index}`).textContent = `(初始等级为0时无法使用此项)`;
+            return;
+          }
+          k = currentLevelCost / m;
+          calculatedKCell.textContent = formatNumber(k);
+        } else {
+          return;
+        }
+
+        if (k > 0) {
+          let totalCost = 0;
+          if (m === 0) {
+            totalCost = k * (1 + (n * (n - 1)) / 2);
+          } else {
+            totalCost = k * (m + ((m + n) * (n - 1 - m)) / 2);
+          }
+          totalCostCell.textContent = formatNumber(totalCost);
+          if (res.isTime) {
+            const days = totalCost / 24;
+            document.getElementById(`time-days-${index}`).innerHTML = `(${formatNumber(days)} 天)`;
+          }
+        }
+      });
+    }
+
+    function resetAll() {
+      document.getElementById('initial-level').value = '0';
+      document.getElementById('target-level').value = '6';
+      document.getElementById('level-error').textContent = '';
+      document.querySelectorAll('.cost-input').forEach(input => input.value = '');
+      resources.forEach((res, index) => {
+        document.getElementById(`total-cost-${index}`).textContent = '-';
+        document.getElementById(`calculated-k-${index}`).textContent = '-';
+        if (res.isTime) document.getElementById(`time-days-${index}`).textContent = '(0 天)';
+      });
+    }
+
+    function formatNumber(num) {
+      return parseFloat(num.toFixed(6));
+    }
+  });
+</script>
+</body>
+</html>
