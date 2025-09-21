@@ -1,99 +1,135 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <title>表格计算器</title>
-  <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
-    table { border-collapse: collapse; }
-    td, th {
-      border: 1px solid #ccc;
-      padding: 5px;
-      min-width: 80px;
-      text-align: center;
-    }
-    input {
-      width: 100%;
-      border: none;
-      text-align: center;
-    }
-    input:focus { outline: 1px solid #4CAF50; }
-  </style>
+    <meta charset="UTF-8">
+    <title>建筑等级配平与上限计算器</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/handsontable/dist/handsontable.full.min.css">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 20px 40px; background-color: #f7f7f7; }
+        h1 { color: #333; }
+        .control-panel { margin-bottom: 20px; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .control-panel label { font-weight: bold; margin-right: 10px; }
+        .control-panel input { width: 150px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
+        #calculator-grid { box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    </style>
 </head>
 <body>
-  <h1>交互式表格计算器</h1>
-  <table id="sheet">
-    <thead>
-      <tr>
-        <th></th>
-        <th>A</th>
-        <th>B</th>
-        <th>C</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <th>1</th>
-        <td><input value="10"></td>
-        <td><input value="20"></td>
-        <td><input value="=A1+B1"></td>
-      </tr>
-      <tr>
-        <th>2</th>
-        <td><input value="5"></td>
-        <td><input value="15"></td>
-        <td><input value="=SUM(A2:B2)"></td>
-      </tr>
-    </tbody>
-  </table>
 
-  <script>
-    function evaluateFormula(formula, getCellValue) {
-      formula = formula.replace(/^=/, "");
-      formula = formula.replace(/\bSUM\(([^)]+)\)/gi, (_, range) => {
-        return range.split(":").map(ref => getCellValue(ref)).join("+");
-      });
-      formula = formula.replace(/\b([A-Z]+)(\d+)\b/g, (_, col, row) => {
-        return getCellValue(col + row);
-      });
-      try {
-        return eval(formula);
-      } catch (e) {
-        return "#ERR";
-      }
-    }
+    <h1>建筑等级配平与上限计算器</h1>
 
-    function recalc() {
-      const table = document.getElementById("sheet");
-      const inputs = table.querySelectorAll("input");
+    <div class="control-panel">
+        <label for="total-levels-to-add">输入总共可提升的等级数:</label>
+        <input type="number" id="total-levels-to-add" value="10" min="0">
+    </div>
 
-      function getCellValue(ref) {
-        const col = ref.match(/[A-Z]+/)[0];
-        const row = parseInt(ref.match(/\d+/)[0], 10);
-        const colIndex = col.charCodeAt(0) - 65; // A=0
-        const rowIndex = row - 1;
-        const cell = table.querySelectorAll("tbody tr")[rowIndex]
-          .querySelectorAll("td")[colIndex]
-          .querySelector("input");
-        const v = cell.value;
-        if (v.startsWith("=")) {
-          return evaluateFormula(v, getCellValue) || 0;
+    <div id="calculator-grid"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/handsontable/dist/handsontable.full.min.js"></script>
+
+    <script>
+        // 1. 从您的CSV文件中提取的原始数据
+        const initialData = [
+            { name: '核心', level: 1, locked: 'n', weight: 1, target: null, boosted: null, cap: 20, final: null },
+            { name: '兵营', level: 1, locked: 'n', weight: 1, target: null, boosted: null, cap: 20, final: null },
+            { name: '靶场', level: 1, locked: 'n', weight: 1, target: null, boosted: null, cap: 20, final: null },
+            { name: '车间', level: 1, locked: 'n', weight: 1, target: null, boosted: null, cap: 20, final: null },
+            { name: '医院', level: 1, locked: 'n', weight: 1, target: null, boosted: null, cap: 20, final: null }
+        ];
+
+        // 2. 这是核心的“配平算法”函数
+        function calculateBalancing() {
+            const totalLevelsToAdd = parseInt(document.getElementById('total-levels-to-add').value, 10) || 0;
+            const data = hot.getSourceDataArray(); // 获取表格当前所有数据
+
+            let totalWeight = 0;
+            const unlockedBuildings = [];
+
+            // 第一次遍历：筛选出未锁定的建筑，并计算总权重
+            data.forEach((row, index) => {
+                const [name, level, locked, weight, target, boosted, cap, final] = row;
+                if (locked !== 'y' && locked !== true) { // 如果建筑未锁定
+                    const w = parseFloat(weight) || 0;
+                    totalWeight += w;
+                    unlockedBuildings.push({
+                        index: index,
+                        currentLevel: parseInt(level) || 0,
+                        weight: w,
+                        cap: parseInt(cap) || 0
+                    });
+                }
+            });
+            
+            const changes = []; // 用来存储所有需要更新的单元格
+
+            // 第二次遍历：计算每个建筑的最终等级
+            data.forEach((row, index) => {
+                const [name, level, locked, weight, target, boosted, cap, final] = row;
+                
+                if (locked === 'y' || locked === true) {
+                    // 如果锁定了，最终等级就是当前等级
+                    changes.push([index, 4, level]); // 配平目标
+                    changes.push([index, 5, level]); // 提升后等级
+                    changes.push([index, 7, level]); // 最终等级
+                } else {
+                    const w = parseFloat(weight) || 0;
+                    const currentLevel = parseInt(level) || 0;
+                    const levelCap = parseInt(cap) || 0;
+
+                    let levelsToAdd = 0;
+                    if (totalWeight > 0) {
+                        // 按权重比例分配等级
+                        levelsToAdd = totalLevelsToAdd * (w / totalWeight);
+                    }
+                    
+                    const levelAfterBoost = currentLevel + levelsToAdd;
+                    const finalLevel = Math.min(levelAfterBoost, levelCap);
+
+                    // 准备更新单元格
+                    changes.push([index, 4, totalWeight > 0 ? (unlockedBuildings.reduce((sum, b) => sum + b.currentLevel, 0) + totalLevelsToAdd) / unlockedBuildings.length : currentLevel]); // 更新配平目标 (平均值)
+                    changes.push([index, 5, levelAfterBoost]); // 更新提升后等级
+                    changes.push([index, 7, finalLevel]);      // 更新最终等级
+                }
+            });
+
+            // 一次性应用所有更新，以获得最佳性能
+            hot.setDataAtCell(changes, null, null, 'calculate');
         }
-        return parseFloat(v) || 0;
-      }
 
-      inputs.forEach(input => {
-        if (input.value.startsWith("=")) {
-          input.value = evaluateFormula(input.value, getCellValue);
-        }
-      });
-    }
+        // 3. 初始化交互式表格
+        const container = document.getElementById('calculator-grid');
+        const hot = new Handsontable(container, {
+            data: initialData.map(row => Object.values(row)),
+            colHeaders: ['建筑名称', '当前等级', '是否锁定', '提升权重', '配平目标', '提升后等级', '等级上限', '最终等级'],
+            columns: [
+                { data: 'name' },
+                { data: 'level', type: 'numeric' },
+                { data: 'locked', type: 'checkbox', checkedTemplate: 'y', uncheckedTemplate: 'n' },
+                { data: 'weight', type: 'numeric' },
+                { data: 'target', type: 'numeric', readOnly: true, numericFormat: { pattern: '0,0.00' } },
+                { data: 'boosted', type: 'numeric', readOnly: true, numericFormat: { pattern: '0,0.00' } },
+                { data: 'cap', type: 'numeric' },
+                { data: 'final', type: 'numeric', readOnly: true, numericFormat: { pattern: '0,0.00' } }
+            ],
+            rowHeaders: true,
+            height: 'auto',
+            width: 'auto',
+            stretchH: 'all',
+            licenseKey: 'non-commercial-and-evaluation',
 
-    document.querySelectorAll("input").forEach(input => {
-      input.addEventListener("input", recalc);
-    });
+            // 4. 设置事件监听：当任何数据变化时，自动重新计算
+            afterChange: (changes, source) => {
+                if (source !== 'calculate') { // 防止因计算本身触发的无限循环
+                    calculateBalancing();
+                }
+            }
+        });
 
-    recalc();
-  </script>
+        // 5. 监听总等级输入框的变化
+        document.getElementById('total-levels-to-add').addEventListener('input', calculateBalancing);
+
+        // 6. 页面加载后立即执行一次计算，以显示初始状态
+        window.addEventListener('DOMContentLoaded', calculateBalancing);
+
+    </script>
 </body>
 </html>
