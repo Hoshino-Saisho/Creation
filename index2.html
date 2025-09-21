@@ -87,78 +87,7 @@
         document.getElementById('calc-ratio-btn').addEventListener('click', calculateRatios);
 
 
-        // --- 功能二：建筑等级配平计算器 ---
-        const levelContainer = document.getElementById('level-calculator');
-        const initialLevelData = Array.from({ length: BUILDING_SLOTS }, () => ["", null, 'n', null, null, null, null]);
-
-        const levelHot = new Handsontable(levelContainer, {
-            data: initialLevelData,
-            colHeaders: ['建筑名称', '当前等级', '是否锁定', '提升权重', '等级上限', '提升后等级 (结果)', '最终等级 (结果)'],
-            columns: [
-                {}, // 名称
-                { type: 'numeric' }, // 当前等级
-                { type: 'checkbox', checkedTemplate: 'y', uncheckedTemplate: 'n' }, // 锁定
-                { type: 'numeric' }, // 权重
-                { type: 'numeric' }, // 上限
-                { type: 'numeric', readOnly: true }, // 提升后
-                { type: 'numeric', readOnly: true }  // 最终
-            ],
-            rowHeaders: true, height: 400, stretchH: 'all', licenseKey: 'non-commercial-and-evaluation'
-        });
-
-        function calculateLevels() {
-            let totalLevelsToAdd = parseInt(document.getElementById('total-levels-input').value, 10) || 0;
-            let data = levelHot.getSourceDataArray().filter(row => row[0]); // 只处理有名称的行
-            
-            let tempData = data.map(row => ({
-                level: parseInt(row[1]) || 0,
-                locked: row[2] === 'y' || row[2] === true,
-                weight: parseFloat(row[3]) || 0,
-                cap: parseInt(row[4]) || Infinity
-            }));
-
-            for (let i = 0; i < totalLevelsToAdd; i++) {
-                let candidateIndex = -1, minLevel = Infinity, maxWeight = -Infinity;
-                tempData.forEach((b, index) => {
-                    if (!b.locked && b.level < b.cap) {
-                        if (b.level < minLevel) {
-                            minLevel = b.level;
-                            maxWeight = b.weight;
-                            candidateIndex = index;
-                        } else if (b.level === minLevel && b.weight > maxWeight) {
-                            maxWeight = b.weight;
-                            candidateIndex = index;
-                        }
-                    }
-                });
-
-                if (candidateIndex !== -1) {
-                    tempData[candidateIndex].level++;
-                } else {
-                    break;
-                }
-            }
-
-            const changes = [];
-            tempData.forEach((b, index) => {
-                changes.push([index, 5, b.level]); // 提升后等级
-                changes.push([index, 6, Math.min(b.level, b.cap)]); // 最终等级
-            });
-            levelHot.setDataAtCell(changes);
-        }
-        
-        // 任何变动都触发等级计算
-        levelHot.addHook('afterChange', (changes, source) => {
-             if (source !== 'loadData') calculateLevels();
-        });
-        document.getElementById('total-levels-input').addEventListener('input', calculateLevels);
-        
-        // 页面加载后运行一次所有计算
-        window.addEventListener('DOMContentLoaded', () => {
-            calculateRatios();
-            calculateLevels();
-        });
-
+       
     </script>
 </body>
 </html>
