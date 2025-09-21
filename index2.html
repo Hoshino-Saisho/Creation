@@ -2,134 +2,108 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>建筑等级配平与上限计算器</title>
+    <title>生产链建筑数量配平计算器</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/handsontable/dist/handsontable.full.min.css">
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 20px 40px; background-color: #f7f7f7; }
-        h1 { color: #333; }
-        .control-panel { margin-bottom: 20px; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .control-panel label { font-weight: bold; margin-right: 10px; }
-        .control-panel input { width: 150px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
-        #calculator-grid { box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1, p { color: #333; }
+        .info { background-color: #eaf2ff; border-left: 4px solid #5a8dee; padding: 15px; margin-bottom: 20px; border-radius: 4px; }
+        .control-panel { margin-bottom: 20px; }
+        .control-panel button { font-size: 16px; padding: 10px 20px; cursor: pointer; background-color: #28a745; color: white; border: none; border-radius: 5px; }
+        #calculator-grid { box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 20px;}
     </style>
 </head>
 <body>
 
-    <h1>建筑等级配平与上限计算器</h1>
+    <h1>生产链建筑数量配平计算器</h1>
+    <div class="info">
+        <p><b>使用说明：</b></p>
+        <ol>
+            <li>在表格中，<b>从上到下</b>依次输入您的生产链建筑 (A -> B -> C)。</li>
+            <li>填写每个建筑的<b>“单位产量”</b>和它对<b>“上级产品的消耗量”</b>。</li>
+            <li>点击计算，系统会自动找出链条中的“基础单位”建筑（即相对需求量最小的建筑），并将其配平数量设为1，然后计算出其他所有建筑的对应数量。</li>
+        </ol>
+    </div>
 
     <div class="control-panel">
-        <label for="total-levels-to-add">输入总共可提升的等级数:</label>
-        <input type="number" id="total-levels-to-add" value="10" min="0">
+        <button id="calculate-button">计算配平数量</button>
     </div>
 
     <div id="calculator-grid"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/handsontable/dist/handsontable.full.min.js"></script>
-
     <script>
-        // 1. 从您的CSV文件中提取的原始数据
-        const initialData = [
-            { name: '核心', level: 1, locked: 'n', weight: 1, target: null, boosted: null, cap: 20, final: null },
-            { name: '兵营', level: 1, locked: 'n', weight: 1, target: null, boosted: null, cap: 20, final: null },
-            { name: '靶场', level: 1, locked: 'n', weight: 1, target: null, boosted: null, cap: 20, final: null },
-            { name: '车间', level: 1, locked: 'n', weight: 1, target: null, boosted: null, cap: 20, final: null },
-            { name: '医院', level: 1, locked: 'n', weight: 1, target: null, boosted: null, cap: 20, final: null }
+        const initialProductionChainData = [
+            // [建筑名称, 单位产量, 上级产品消耗量, 配平数量(结果)]
+            ['铁矿场', 30, 0, null],
+            ['炼铁厂', 30, 30, null],
+            ['齿轮厂', 15, 15, null]
         ];
 
-        // 2. 这是核心的“配平算法”函数
-        function calculateBalancing() {
-            const totalLevelsToAdd = parseInt(document.getElementById('total-levels-to-add').value, 10) || 0;
-            const data = hot.getSourceDataArray(); // 获取表格当前所有数据
+        // 最终版算法：三步配平法
+        function calculateChainRatios() {
+            const data = hot.getSourceDataArray();
+            if (data.length === 0) return;
 
-            let totalWeight = 0;
-            const unlockedBuildings = [];
+            // --- 步骤 1: 反向计算，得出相对于最终产品的“相对配比” ---
+            const relativeRatios = new Array(data.length);
+            relativeRatios[data.length - 1] = 1; // 最后一个建筑的相对配比基准为1
 
-            // 第一次遍历：筛选出未锁定的建筑，并计算总权重
-            data.forEach((row, index) => {
-                const [name, level, locked, weight, target, boosted, cap, final] = row;
-                if (locked !== 'y' && locked !== true) { // 如果建筑未锁定
-                    const w = parseFloat(weight) || 0;
-                    totalWeight += w;
-                    unlockedBuildings.push({
-                        index: index,
-                        currentLevel: parseInt(level) || 0,
-                        weight: w,
-                        cap: parseInt(cap) || 0
-                    });
-                }
-            });
-            
-            const changes = []; // 用来存储所有需要更新的单元格
+            for (let i = data.length - 2; i >= 0; i--) {
+                const upstreamOutput = parseFloat(data[i][1]) || 0;
+                const downstreamConsumption = parseFloat(data[i + 1][2]) || 0;
 
-            // 第二次遍历：计算每个建筑的最终等级
-            data.forEach((row, index) => {
-                const [name, level, locked, weight, target, boosted, cap, final] = row;
-                
-                if (locked === 'y' || locked === true) {
-                    // 如果锁定了，最终等级就是当前等级
-                    changes.push([index, 4, level]); // 配平目标
-                    changes.push([index, 5, level]); // 提升后等级
-                    changes.push([index, 7, level]); // 最终等级
+                if (upstreamOutput === 0) {
+                    relativeRatios[i] = Infinity;
                 } else {
-                    const w = parseFloat(weight) || 0;
-                    const currentLevel = parseInt(level) || 0;
-                    const levelCap = parseInt(cap) || 0;
-
-                    let levelsToAdd = 0;
-                    if (totalWeight > 0) {
-                        // 按权重比例分配等级
-                        levelsToAdd = totalLevelsToAdd * (w / totalWeight);
-                    }
-                    
-                    const levelAfterBoost = currentLevel + levelsToAdd;
-                    const finalLevel = Math.min(levelAfterBoost, levelCap);
-
-                    // 准备更新单元格
-                    changes.push([index, 4, totalWeight > 0 ? (unlockedBuildings.reduce((sum, b) => sum + b.currentLevel, 0) + totalLevelsToAdd) / unlockedBuildings.length : currentLevel]); // 更新配平目标 (平均值)
-                    changes.push([index, 5, levelAfterBoost]); // 更新提升后等级
-                    changes.push([index, 7, finalLevel]);      // 更新最终等级
+                    // 核心公式：上游配比 = 下游配比 * 下游消耗 / 上游产出
+                    relativeRatios[i] = relativeRatios[i+1] * downstreamConsumption / upstreamOutput;
+                }
+            }
+            
+            // --- 步骤 2: 找到所有相对配比中的最小值 (即“最小权重”) ---
+            let minRatio = Infinity;
+            relativeRatios.forEach(ratio => {
+                if (ratio > 0 && ratio < minRatio) {
+                    minRatio = ratio;
                 }
             });
 
-            // 一次性应用所有更新，以获得最佳性能
-            hot.setDataAtCell(changes, null, null, 'calculate');
+            if (minRatio === Infinity) { // 如果所有比率都是0或无效，则不进行下一步
+                minRatio = 1;
+            }
+
+            // --- 步骤 3: 使用“1/最小配比”作为全局乘数，计算最终的配平数量 ---
+            const globalMultiplier = 1 / minRatio;
+            const changes = [];
+            relativeRatios.forEach((ratio, index) => {
+                const finalAmount = ratio * globalMultiplier;
+                changes.push([index, 3, finalAmount]);
+            });
+
+            // 一次性将所有计算结果更新到表格
+            hot.setDataAtCell(changes);
         }
 
-        // 3. 初始化交互式表格
         const container = document.getElementById('calculator-grid');
         const hot = new Handsontable(container, {
-            data: initialData.map(row => Object.values(row)),
-            colHeaders: ['建筑名称', '当前等级', '是否锁定', '提升权重', '配平目标', '提升后等级', '等级上限', '最终等级'],
+            data: initialProductionChainData,
+            colHeaders: ['建筑名称', '单位产量', '上级产品消耗量', '配平数量 (结果)'],
             columns: [
-                { data: 'name' },
-                { data: 'level', type: 'numeric' },
-                { data: 'locked', type: 'checkbox', checkedTemplate: 'y', uncheckedTemplate: 'n' },
-                { data: 'weight', type: 'numeric' },
-                { data: 'target', type: 'numeric', readOnly: true, numericFormat: { pattern: '0,0.00' } },
-                { data: 'boosted', type: 'numeric', readOnly: true, numericFormat: { pattern: '0,0.00' } },
-                { data: 'cap', type: 'numeric' },
-                { data: 'final', type: 'numeric', readOnly: true, numericFormat: { pattern: '0,0.00' } }
+                {}, 
+                { type: 'numeric' }, 
+                { type: 'numeric' }, 
+                { type: 'numeric', readOnly: true, numericFormat: { pattern: '0,0.000' } }
             ],
             rowHeaders: true,
             height: 'auto',
             width: 'auto',
             stretchH: 'all',
-            licenseKey: 'non-commercial-and-evaluation',
-
-            // 4. 设置事件监听：当任何数据变化时，自动重新计算
-            afterChange: (changes, source) => {
-                if (source !== 'calculate') { // 防止因计算本身触发的无限循环
-                    calculateBalancing();
-                }
-            }
+            licenseKey: 'non-commercial-and-evaluation'
         });
 
-        // 5. 监听总等级输入框的变化
-        document.getElementById('total-levels-to-add').addEventListener('input', calculateBalancing);
-
-        // 6. 页面加载后立即执行一次计算，以显示初始状态
-        window.addEventListener('DOMContentLoaded', calculateBalancing);
-
+        document.getElementById('calculate-button').addEventListener('click', calculateChainRatios);
+        window.addEventListener('DOMContentLoaded', calculateChainRatios);
     </script>
 </body>
 </html>
