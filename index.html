@@ -141,12 +141,12 @@
 
   <div class="level-inputs">
     <div>
-      <label for="initial-level">初始等级 (m)</label>
-      <input type="number" id="initial-level" min="0" value="0">
+      <label for="initial-level"  >初始等级 (m)</label>
+      <input type="number" id="initial-level" min="0" value="0" tabindex=1>
     </div>
     <div>
       <label for="target-level">目标等级 (n)</label>
-      <input type="number" id="target-level" min="1" value="6">
+      <input type="number" id="target-level" min="1" value="6" tabindex=2>
     </div>
   </div>
   <div id="level-error" class="error-message" style="text-align: center; margin-bottom: 15px;"></div>
@@ -181,16 +181,20 @@
     ];
 
     const tableBody = document.getElementById('resource-table');
+    const tabIndexOffset = 3;
 
     resources.forEach((res, index) => {
       const row = document.createElement('tr');
       row.id = `resource-${index}`;
       let timeCell = res.isTime ? `<br><span id="time-days-${index}" style="font-size:0.9em; color:#555;">(0 天)</span>` : '';
 
+      const oneLevelCostTabIndex = tabIndexOffset + index;
+      const currentLevelCostTabIndex = oneLevelCostTabIndex + resources.length;
+
       row.innerHTML = `
         <td>${res.name}${timeCell}</td>
-        <td><input type="number" class="cost-input level-1-cost" placeholder="输入一级成本" min="0"></td>
-        <td><input type="number" class="cost-input current-level-cost" placeholder="输入当前等级成本" min="0"></td>
+        <td><input type="number" class="cost-input level-1-cost" placeholder="输入一级成本" min="0" tabindex=${oneLevelCostTabIndex}></td>
+        <td><input type="number" class="cost-input current-level-cost" placeholder="输入当前等级成本" min="0" tabindex=${currentLevelCostTabIndex}></td>
         <td class="output-cell" id="total-cost-${index}">-</td>
         <td class="output-cell" id="calculated-k-${index}">-</td>
       `;
